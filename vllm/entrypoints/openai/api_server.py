@@ -58,7 +58,7 @@ async def lifespan(app: fastapi.FastAPI):
 
 
 app = fastapi.FastAPI(lifespan=lifespan)
-
+max_tokens = 0
 
 def parse_args():
     parser = make_arg_parser()
@@ -100,6 +100,11 @@ async def show_version():
 @app.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
+    if max_tokens > 0:
+        if request.max_tokens is not None:
+            request.max_tokens = min(int(request.max_tokens), int(max_tokens))
+        else:
+            request.max_tokens = max_tokens
     generator = await openai_serving_chat.create_chat_completion(
         request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -140,6 +145,9 @@ async def create_embedding(request: EmbeddingRequest, raw_request: Request):
 
 if __name__ == "__main__":
     args = parse_args()
+    import os
+    max_tokens = int(os.environ['VLLM_MAX_TOKENS'])
+    print("Max tokens", max_tokens)
 
     app.add_middleware(
         CORSMiddleware,
