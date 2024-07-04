@@ -59,6 +59,10 @@ async def lifespan(app: fastapi.FastAPI):
 
 app = fastapi.FastAPI(lifespan=lifespan)
 max_tokens = 0
+top_k = 20
+top_p = 0.8
+repetition_penalty = 1.17
+temperature = 0.7
 
 def parse_args():
     parser = make_arg_parser()
@@ -105,6 +109,16 @@ async def create_chat_completion(request: ChatCompletionRequest,
             request.max_tokens = min(int(request.max_tokens), int(max_tokens))
         else:
             request.max_tokens = max_tokens
+    # if request.temperature is None or request.temperature == 0:
+    #     request.temperature = temperature
+    # if request.top_k is None or request.top_k == -1:
+    #     request.top_k = top_k
+    # if request.top_p is None or request.top_p == 1:
+    #     request.top_p = top_p
+    if request.repetition_penalty is None or request.repetition_penalty == 1:
+        request.repetition_penalty = repetition_penalty
+        
+    request.stop_token_ids = [151645, 151643]
     generator = await openai_serving_chat.create_chat_completion(
         request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -147,7 +161,12 @@ if __name__ == "__main__":
     args = parse_args()
     import os
     max_tokens = int(os.environ['VLLM_MAX_TOKENS'])
+    top_p = float(os.environ['VLLM_TOP_P'])
+    top_k = float(os.environ['VLLM_TOP_K'])
+    repetition_penalty = float(os.environ['VLLM_repetition_penalty'])
+    temperature = float(os.environ['VLLM_DEFAULT_TEMPERATURE'])
     print("Max tokens", max_tokens)
+    print(f"Top P: {top_p}, Top K: {top_k}, Repetition Penalty: {repetition_penalty}, Temperature: {temperature}")
 
     app.add_middleware(
         CORSMiddleware,
