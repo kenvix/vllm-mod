@@ -61,6 +61,44 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+import os
+if 'VLLM_MAX_VRAM_USAGE' in os.environ:
+    max_vram_usage = float(os.environ['VLLM_MAX_VRAM_USAGE'])
+    num_devices = torch.cuda.device_count()
+    for device_index in range(num_devices):
+        allocated = torch.cuda.memory_allocated(device_index)
+        reserved = torch.cuda.memory_reserved(device_index)
+        torch.cuda.set_per_process_memory_fraction(max_vram_usage, device=device_index)
+        logger.info(f"Device {device_index} - VRAM Max f{max_vram_usage} Allocated: {allocated / (1024 ** 2):.2f} MB, VRAM Reserved: {reserved / (1024 ** 2):.2f} MB")
+
+import schedule
+import time
+import torch
+import threading
+import gc
+
+def release_pytorch_memory():
+    torch.cuda.empty_cache()
+    gc.collect()
+    logger.info("PyTorch memory and Python garbage have been released.")
+     
+def schedule_task():
+    schedule.every().day.at("04:30").do(release_pytorch_memory)
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+        num_devices = torch.cuda.device_count()
+        for device_index in range(num_devices):
+            allocated = torch.cuda.memory_allocated(device_index)
+            reserved = torch.cuda.memory_reserved(device_index)
+            logger.info(f"Device {device_index} - Allocated: {allocated / (1024 ** 2):.2f} MB, VRAM Reserved: {reserved / (1024 ** 2):.2f} MB")
+
+
+# Start the scheduling in a separate thread
+scheduler_thread = threading.Thread(target=schedule_task)
+scheduler_thread.daemon = True
+scheduler_thread.start()
+
 _PAD_SLOT_ID = -1
 LORA_WARMUP_RANK = 8
 _BATCH_SIZE_ALIGNMENT = 8

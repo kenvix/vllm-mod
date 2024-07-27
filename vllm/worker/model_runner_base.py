@@ -8,6 +8,8 @@ import torch
 from vllm.sequence import (IntermediateTensors, SamplerOutput,
                            SequenceGroupMetadata)
 
+
+
 if TYPE_CHECKING:
     from vllm.attention import AttentionMetadata
     from vllm.attention.backends.abstract import AttentionBackend

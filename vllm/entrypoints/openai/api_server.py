@@ -95,6 +95,18 @@ async def health() -> Response:
     await openai_serving_chat.engine.check_health()
     return Response(status_code=200)
 
+import torch
+import json
+@app.get("/ramstatus")
+async def health() -> Response:
+    """Health check."""
+    num_devices = torch.cuda.device_count()
+    for device_index in range(num_devices):
+        allocated = torch.cuda.memory_allocated(device_index)
+        reserved = torch.cuda.memory_reserved(device_index)
+        logger.info(f"Device {device_index} - VRAM Allocated: {allocated / (1024 ** 2):.2f} MB, VRAM Reserved: {reserved / (1024 ** 2):.2f} MB")
+    return Response(status_code=200)
+
 
 @app.post("/tokenize")
 async def tokenize(request: TokenizeRequest):
@@ -194,8 +206,8 @@ if __name__ == "__main__":
     top_k = float(os.environ['VLLM_TOP_K'])
     repetition_penalty = float(os.environ['VLLM_repetition_penalty'])
     temperature = float(os.environ['VLLM_DEFAULT_TEMPERATURE'])
-    print("Max tokens", max_tokens)
-    print(f"Top P: {top_p}, Top K: {top_k}, Repetition Penalty: {repetition_penalty}, Temperature: {temperature}")
+    logger.info(f"Max tokens {max_tokens}")
+    logger.info(f"Top P: {top_p}, Top K: {top_k}, Repetition Penalty: {repetition_penalty}, Temperature: {temperature}")
 
     app.add_middleware(
         CORSMiddleware,
