@@ -87,6 +87,7 @@ def release_pytorch_memory():
      
 def schedule_task():
     schedule.every().day.at("04:30").do(release_pytorch_memory)
+    schedule.every().day.at("18:30").do(release_pytorch_memory)
     while True:
         schedule.run_pending()
         time.sleep(60)

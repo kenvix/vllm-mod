@@ -95,7 +95,7 @@ async def health() -> Response:
 
 import torch
 import json
-@app.get("/ramstatus")
+@router.get("/ramstatus")
 async def health() -> Response:
     """Health check."""
     num_devices = torch.cuda.device_count()
