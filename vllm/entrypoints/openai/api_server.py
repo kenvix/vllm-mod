@@ -147,10 +147,11 @@ async def build_async_engine_client(args) -> AsyncIterator[AsyncEngineClient]:
 router = APIRouter()
 
 max_tokens = 0
-top_k = 20
-top_p = 0.8
-repetition_penalty = 1.17
-temperature = 0.7
+max_tokens_default = 0
+top_k = None
+top_p = None
+repetition_penalty = None
+temperature = None
 
 def mount_metrics(app: FastAPI):
     # Add prometheus asgi middleware to route /metrics requests
@@ -216,21 +217,26 @@ async def show_version():
 @router.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
                                  raw_request: Request):
-    if max_tokens > 0:
+    global max_tokens, max_tokens_default
+    if max_tokens_default is not None and max_tokens_default > 0:
+        if request.max_tokens is None or request.max_tokens <= 0:
+            request.max_tokens = max_tokens_default
+    if max_tokens is not None and max_tokens > 0:
         if request.max_tokens is not None:
             request.max_tokens = min(int(request.max_tokens), int(max_tokens))
         else:
             request.max_tokens = max_tokens
-    # if request.temperature is None or request.temperature == 0:
-    #     request.temperature = temperature
-    # if request.top_k is None or request.top_k == -1:
-    #     request.top_k = top_k
-    # if request.top_p is None or request.top_p == 1:
-    #     request.top_p = top_p
-    if request.repetition_penalty is None or request.repetition_penalty == 1:
+    if temperature is not None and (request.temperature is None) and (request.top_p is None):
+        request.temperature = temperature
+    if top_k is not None and (request.top_k is None):
+        request.top_k = top_k
+    if top_p is not None and (request.top_p is None) and (request.temperature is None):
+        request.top_p = top_p
+    if repetition_penalty is not None and (request.repetition_penalty):
         request.repetition_penalty = repetition_penalty
         
-    request.stop_token_ids = [151645, 151643]
+    # request.stop_token_ids = [151645, 151643]
+    
     generator = await openai_serving_chat.create_chat_completion(
         request, raw_request)
     if isinstance(generator, ErrorResponse):
@@ -275,11 +281,14 @@ def build_app(args: Namespace) -> FastAPI:
     app.root_path = args.root_path
     
     import os
-    max_tokens = int(os.environ['VLLM_MAX_TOKENS'])
-    top_p = float(os.environ['VLLM_TOP_P'])
-    top_k = float(os.environ['VLLM_TOP_K'])
-    repetition_penalty = float(os.environ['VLLM_repetition_penalty'])
-    temperature = float(os.environ['VLLM_DEFAULT_TEMPERATURE'])
+    
+    global max_tokens, max_tokens_default, top_k, top_p, repetition_penalty, temperature
+    max_tokens = int(os.environ['VLLM_MAX_TOKENS']) if 'VLLM_MAX_TOKENS' in os.environ else None
+    max_tokens_default = int(os.environ['VLLM_MAX_TOKENS_DEFAULT']) if 'VLLM_MAX_TOKENS_DEFAULT' in os.environ else None
+    top_p = float(os.environ['VLLM_TOP_P']) if 'VLLM_TOP_P' in os.environ else None
+    top_k = float(os.environ['VLLM_TOP_K']) if 'VLLM_TOP_K' in os.environ else None
+    repetition_penalty = float(os.environ['VLLM_repetition_penalty']) if 'VLLM_repetition_penalty' in os.environ else None
+    temperature = float(os.environ['VLLM_DEFAULT_TEMPERATURE']) if 'VLLM_DEFAULT_TEMPERATURE' in os.environ else None
     logger.info(f"Max tokens {max_tokens}")
     logger.info(f"Top P: {top_p}, Top K: {top_k}, Repetition Penalty: {repetition_penalty}, Temperature: {temperature}")
 
