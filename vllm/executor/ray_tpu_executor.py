@@ -26,6 +26,8 @@ logger = init_logger(__name__)
 
 class RayTPUExecutor(TPUExecutor):
 
+    uses_ray: bool = True
+
     def __init__(self, *args, **kwargs):
         # This is non-None when the execute model loop is running
         # in the parallel workers. It's a coroutine in the AsyncLLMEngine case.
@@ -68,8 +70,12 @@ class RayTPUExecutor(TPUExecutor):
             )
 
             assert self.speculative_config is None
-            worker_module_name = "vllm.worker.tpu_worker"
-            worker_class_name = "TPUWorker"
+            if self.scheduler_config.is_multi_step:
+                worker_module_name = "vllm.worker.multi_step_tpu_worker"
+                worker_class_name = "MultiStepTPUWorker"
+            else:
+                worker_module_name = "vllm.worker.tpu_worker"
+                worker_class_name = "TPUWorker"
 
             # GKE does not fetch environment information from metadata server
             # and instead sets these from within the Ray process. Therefore we
@@ -111,11 +117,39 @@ class RayTPUExecutor(TPUExecutor):
                 # Else, added to the list of workers.
                 self.workers.append(worker)
 
+        logger.debug("workers: %s", self.workers)
+        logger.debug("driver_dummy_worker: %s", self.driver_dummy_worker)
         if self.driver_dummy_worker is None:
             raise ValueError(
                 "Ray does not allocate any TPUs on the driver node. Consider "
                 "adjusting the Ray placement group or running the driver on a "
                 "TPU node.")
+
+        worker_ips = [
+            ray.get(worker.get_node_ip.remote())  # type: ignore[attr-defined]
+            for worker in self.workers
+        ]
+        ip_counts: Dict[str, int] = {}
+        for ip in worker_ips:
+            ip_counts[ip] = ip_counts.get(ip, 0) + 1
+
+        def sort_by_driver_then_worker_ip(worker):
+            """
+            Sort the workers based on 3 properties:
+            1. If the worker is on the same node as the driver (vllm engine),
+                it should be placed first.
+            2. Then, if the worker is on a node with fewer workers, it should
+                be placed first.
+            3. Finally, if the work is on a node with smaller IP address, it
+                should be placed first.
+            """
+            ip = ray.get(worker.get_node_ip.remote())
+            return (ip != driver_ip, ip_counts[ip], ip)
+
+        # After sorting, the workers on the same node will be
+        # close to each other, and the workers on the driver
+        # node will be placed first.
+        self.workers = sorted(self.workers, key=sort_by_driver_then_worker_ip)
 
         # Get the set of TPU IDs used on each node.
         worker_node_and_gpu_ids = self._run_workers("get_node_and_gpu_ids",
